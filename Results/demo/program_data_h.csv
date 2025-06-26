@@ -1,0 +1,2 @@
+n , h , d , g  , t , h_prob, cpu_time_poly, wall_time_poly, cpu_time_ddsim, wall_time_ddsim, cpu_time_aer, wall_time_aer
+20, 10, 31, 163, 30,   0.05,       0.28125,       0.306601,       0.828125,        0.136567,     0.609375,      0.149212
