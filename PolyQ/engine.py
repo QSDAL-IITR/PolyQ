@@ -1,10 +1,12 @@
+# Core Logic File
+
 """
 This file does not contain the functions needed for universal simulation.
 It only includes the funcitons needed for simulating the Clifford + S + T
-gates and their inverses.
+gates and their inverses. By Clifford, we mean {H,Z,CZ,CCZ} set here. 
 
 This file contain all the essential functions required for each step
-from creating the polynomial using an array, to returning the final 
+from creating the polynomial as an array, to returning the final 
 state vector after calculating the truth table for each possible values
 of variables.
 """
@@ -70,7 +72,7 @@ def create_poly(qc, n: int):
 
 
 # function to evaluate polynomial equation
-def eval_f(terms,x,n): 
+def eval_f_no_ivs(terms,x,n): 
     # x is an array of type bool, it contains the value of x to be evaluated 
     val_out: np.int8 = 0 # gets values between [0,7]
     for term in terms:
@@ -80,7 +82,19 @@ def eval_f(terms,x,n):
         v = bool(1) # The inputs remain boolean. Hence, the products of the variables will remain boolean. 
         for j in indices:
             v &= x[j-n] 
-        val_out = np.int8(val_out + weight*int(v))%8 #Ensuring all operations are done modulo 8, as integer operations. 
+        val_out = np.int8(val_out + weight*int(v))%8 # Ensuring all operations are done modulo 8, as integer operations. 
+    return val_out
+def eval_f(terms,x,n): 
+    # x is an array of type bool, it contains the value of x to be evaluated 
+    val_out: np.int8 = 0 # gets values between [0,7]
+    for term in terms:
+        weight = term[0]
+        indices = term[1]
+        # print("weight and indices: ", weight, indices)
+        v = bool(1) # The inputs remain boolean. Hence, the products of the variables will remain boolean. 
+        for j in indices:
+            v &= x[j] 
+        val_out = np.int8(val_out + weight*int(v))%8 # Ensuring all operations are done modulo 8, as integer operations. 
     return val_out
 
 # ============== This is the most time consuming step ==============
@@ -113,12 +127,14 @@ def get_truthtable(terms, n, t, initial_state):
         # i = int(x(n)x(n+1)...)
         # filling other varibles value
         y_bin = bin(i)[2:].zfill(t-n)
+        # print("evaluate for x: ")
         # print(y_bin)
         # start_inner_loop = time.time()
         for ind, val in enumerate(y_bin):
             x[n+ind] = bool(int(val))
         # print(f"Time to run the inner loop once is: {time.time() - start_inner_loop}")
         # start_eval_f = time.time()
+        # print(x)
         ttb[i] = eval_f(terms,x,n) # terms is a big array, it should be given as a reference
         # print(f"Time to run eval_f once is: {time.time() - start_eval_f}")
     
@@ -171,7 +187,7 @@ def get_truthtable_no_ivs(terms, n, t, initial_state):
             x_no_ivs[ind] = bool(int(val))
         # print(f"Time to run the inner loop once is: {time.time() - start_inner_loop}")
         # start_eval_f = time.time()
-        ttb[i] = eval_f(new_terms,x_no_ivs,n) # terms is a big array, it should be given as a reference
+        ttb[i] = eval_f_no_ivs(new_terms,x_no_ivs,n) # terms is a big array, it should be given as a reference
         # print(f"Time to run eval_f once is: {time.time() - start_eval_f}")
     
     # print(f"Time to get ttb is: {time.time() - start}")
@@ -198,7 +214,7 @@ def get_statevector(ttb, n, t, ovs, starting_index=0):
         #     s_ldic[chosen_int][t_val] += 1 
         # OR 
         if chosen_int not in s_ldic: # !!!!!!! This line is very costly !!!!!!!!!!!
-            s_ldic[chosen_int] = np.array([0,0,0,0,0,0,0,0], dtype=np.uint8) 
+            s_ldic[chosen_int] = np.array([0,0,0,0,0,0,0,0]) 
             # If the chosen variables have not been chosen before, 
             # define a new element corresponding to that combo and then update the array
         s_ldic[chosen_int][t_val] += 1 #If array has been created already, just update it
@@ -259,3 +275,4 @@ def get_statevector_file(ttb, n, t, ovs, starting_index=0):
             f.write(f"k: {binary_k}, amp: {amp}\n") # Or write only the non-zero values
 
     return stvec_filename
+

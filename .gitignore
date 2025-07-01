@@ -1,2 +1,12 @@
 Results/run2/arbitrary_h/circuits
-Dependencies/__pycache__
+polyq-venv
+PolyQ/utils/qasm_to_poly.py
+build/
+dist/
+PolyQ.egg-info/
+/main-benchmark.ipynb 
+/testing_things.ipynb
+/emails 
+/acknowledgement
+PolyQ/__pycache__
+/PolyQ/utils/__pycache__

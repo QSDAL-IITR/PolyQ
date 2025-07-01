@@ -1,5 +1,10 @@
-mqt==0.1.1
-numpy==2.0.0
-psutil==5.9.8
-qiskit==1.0.2
-qiskit_aer==0.14.2
+numpy>=2
+qiskit>=2.0.0
+
+# PolyQ on itself only requires numpy for evaluation and qiskit for it's QuantumCicuit object.
+# For benchmarking and testing purposes, one will need the following libraries as intended.
+
+qiskit_aer>=0.17.0
+mqt>=0.1.1
+mqt.ddsim>=1.24
+psutil>=7.0.0
