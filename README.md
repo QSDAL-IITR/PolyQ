@@ -44,6 +44,11 @@ print(st_vec)
 The full list of references used in the development of PolyQ is available in [`references.bib`](./references.bib).  
 This file contains BibTeX entries for academic papers, libraries, and resources cited in the project and the upcoming paper.
 
+## Documentation
+
+You can view the generated Sphinx docs here:
+
+[📖 PolyQ Documentation](docs/_build/html/index.html)
 
 ## 📚 Citation
 
