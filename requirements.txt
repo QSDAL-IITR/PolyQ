@@ -8,3 +8,5 @@ qiskit_aer>=0.17.0
 mqt>=0.1.1
 mqt.ddsim>=1.24
 psutil>=7.0.0
+sphinx
+sphinx-autodoc-
