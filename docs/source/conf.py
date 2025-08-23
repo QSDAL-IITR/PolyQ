@@ -17,6 +17,7 @@ release = '0.1.0'
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
+    'sphinx.ext.githubpages',
 
 ]
 
@@ -26,3 +27,5 @@ autodoc_default_options = {
     'undoc-members': True,
     'show-inheritance': True,
 }
+
+html_theme = 'sphinx_rtd_theme'
