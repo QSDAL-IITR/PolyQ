@@ -1,3 +1,4 @@
+[![Docs](https://github.com/jajapuramshivasai/PolyQ/actions/workflows/gh-pages.yml/badge.svg)](https://github.com/jajapuramshivasai/PolyQ/actions/workflows/gh-pages.yml)
 # 🧮 PolyQ
 ### A novel approach to simulate Quantum Circuits using Boolean Polynomials.
 
