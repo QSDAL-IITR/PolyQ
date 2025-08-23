@@ -49,7 +49,7 @@ This file contains BibTeX entries for academic papers, libraries, and resources 
 
 You can view the generated Sphinx docs here:
 
-[📖 PolyQ Documentation](docs/_build/html/index.html)
+[📖 PolyQ Documentation](https://jajapuramshivasai.github.io/PolyQ/)
 
 ## 📚 Citation
 
