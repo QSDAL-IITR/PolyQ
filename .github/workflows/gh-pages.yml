@@ -2,7 +2,7 @@ name: Build and Deploy Docs
 
 on:
   push:
-    branches: [main]  # or your default branch
+    branches: [feat-sphinx-docs]  # or your default branch
 
 jobs:
   docs:
