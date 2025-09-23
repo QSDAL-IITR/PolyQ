@@ -1,644 +1,287 @@
-"""
-Unified ring mathematics and quadratic forms using SymPy for exact computation.
-"""
+from typing import List, Tuple, Dict
 
-from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Any, Union, Optional, Set
-import sympy as sp
-from sympy import Matrix, symbols, Poly, GF, ZZ, Rational, Mod
-from sympy.polys.galoistools import gf_irreducible_p
-from sympy.polys.domains import ZZ as ZZ_domain
-from functools import lru_cache
-import numpy as np
-import time
+# ========================== Integer Ring (Z) ==========================
+class IntegerRing:
+    def zero(self) -> int: return 0
+    def one(self) -> int: return 1
+    def add(self, a: int, b: int) -> int: return a + b
+    def sub(self, a: int, b: int) -> int: return a - b
+    def mul(self, a: int, b: int) -> int: return a * b
+    def neg(self, a: int) -> int: return -a
+    def is_zero(self, a: int) -> bool: return a == 0
+    def is_unit(self, a: int) -> bool: return abs(a) == 1
 
-class EnhancedRing(ABC):
-    """Abstract base class for mathematical rings using SymPy."""
-    
-    @abstractmethod
-    def domain(self):
-        """Return the SymPy domain for this ring."""
-        pass
-    
-    @abstractmethod
-    def zero(self):
-        """Return the additive identity."""
-        pass
-    
-    @abstractmethod
-    def one(self):
-        """Return the multiplicative identity."""
-        pass
-    
-    @abstractmethod
-    def characteristic(self):
-        """Return the characteristic of the ring."""
-        pass
+    def div_exact(self, a: int, b: int) -> int:
+        if b == 0: raise ZeroDivisionError("division by zero")
+        q, r = divmod(a, b)
+        if r != 0: raise ValueError(f"{a} not divisible by {b}")
+        return q
 
-class ZnRing(EnhancedRing):
-    """Ring Z/nZ using SymPy modular arithmetic with optimization."""
-    
-    def __init__(self, modulus: int):
-        self.modulus = modulus
-        self._is_prime = sp.isprime(modulus)
-        self._characteristic = modulus if self._is_prime else 0
-        
-        # Use GF for prime modulus
-        if self._is_prime:
-            self._domain = GF(modulus)
-            self._zero = self._domain.zero
-            self._one = self._domain.one
-        else:
-            self._domain = None
-            self._zero = 0
-            self._one = 1
-    
-    def domain(self):
-        return self._domain if self._domain else f"Z/{self.modulus}Z"
-    
-    def zero(self):
-        return self._zero
-    
-    def one(self):
-        return self._one
-    
-    def characteristic(self):
-        return self._characteristic
-    
-    def element(self, value: int):
-        """Create ring element from integer."""
-        if self._domain:
-            return self._domain(value % self.modulus)
-        return value % self.modulus
-    
-    def add(self, a, b):
-        """Addition in Z/nZ."""
-        if self._domain:
-            return self._domain(a) + self._domain(b)
-        return (int(a) + int(b)) % self.modulus
-    
-    def multiply(self, a, b):
-        """Multiplication in Z/nZ."""
-        if self._domain:
-            return self._domain(a) * self._domain(b)
-        return (int(a) * int(b)) % self.modulus
-    
-    @lru_cache(maxsize=256)
-    def inverse(self, a):
-        """Multiplicative inverse if it exists."""
-        a_int = int(a) % self.modulus
-        if a_int == 0:
-            return None
-            
-        if self._domain:
-            try:
-                return self._domain(a_int) ** (-1)
-            except ZeroDivisionError:
-                return None
-        else:
-            return self._mod_inverse(a_int, self.modulus)
-    
-    def _mod_inverse(self, a: int, m: int) -> Optional[int]:
-        """Compute modular inverse using extended Euclidean algorithm."""
-        def extended_gcd(a, b):
-            if a == 0:
-                return b, 0, 1
-            gcd_val, x1, y1 = extended_gcd(b % a, a)
-            x = y1 - (b // a) * x1
-            y = x1
-            return gcd_val, x, y
-        
-        gcd_val, x, _ = extended_gcd(a % m, m)
-        if gcd_val != 1:
-            return None
-        return (x % m + m) % m
-    
-    def is_unit(self, a) -> bool:
-        """Check if element is invertible."""
-        return self.inverse(a) is not None
-    
-    def __str__(self):
-        return f"Z/{self.modulus}Z"
+    def gcd(self, a: int, b: int) -> int:
+        a, b = abs(a), abs(b)
+        while b: a, b = b, a % b
+        return a
 
-class FiniteField(EnhancedRing):
-    """Finite field GF(p^n) using SymPy."""
-    
-    def __init__(self, characteristic: int, degree: int = 1):
-        if not sp.isprime(characteristic):
-            raise ValueError(f"Characteristic {characteristic} must be prime")
-            
-        self._characteristic = characteristic
-        self.degree = degree
-        self.order = characteristic ** degree
-        
-        if degree == 1:
-            self._domain = GF(characteristic)
-        else:
-            self._domain = GF(characteristic**degree)
-    
-    def domain(self):
-        return self._domain
-    
-    def zero(self):
-        return self._domain.zero
-    
-    def one(self):
-        return self._domain.one
-    
-    def characteristic(self):
-        return self._characteristic
-    
-    def element(self, value):
-        """Create field element."""
-        return self._domain(value)
-    
-    def __str__(self):
-        if self.degree == 1:
-            return f"GF({self._characteristic})"
-        return f"GF({self._characteristic}^{self.degree})"
+Z = IntegerRing()
 
-class UnifiedQuadraticForm:
-    """Unified quadratic forms supporting both SymPy and numpy backends."""
-    
-    def __init__(self, coefficients: Dict[Tuple[int, int], Any], ring: EnhancedRing):
-        self.ring = ring
-        self.raw_coeffs = coefficients.copy()
-        
-        # Normalize and store coefficients
-        self.coeffs = {}
-        for (i, j), v in coefficients.items():
-            if hasattr(ring, 'element'):
-                self.coeffs[(i, j)] = ring.element(v)
-            else:
-                self.coeffs[(i, j)] = v
-        
-        self.n_vars = max(max(k) for k in coefficients.keys()) + 1 if coefficients else 0
-        
-        # Cache matrices
-        self._symmetric_matrix = None
-        self._bilinear_matrix = None
-        self._numpy_matrix = None
-    
-    def to_symmetric_matrix(self) -> Matrix:
-        """Convert to symmetric matrix (cached)."""
-        if self._symmetric_matrix is not None:
-            return self._symmetric_matrix
-            
-        matrix_data = []
-        for i in range(self.n_vars):
-            row = []
-            for j in range(self.n_vars):
-                if (i, j) in self.coeffs:
-                    row.append(self.coeffs[(i, j)])
-                elif (j, i) in self.coeffs:
-                    row.append(self.coeffs[(j, i)])
+# ========================== Integer Matrices ==========================
+class IntMatrix:
+    def __init__(self, data: List[List[int]]):
+        if not data or not data[0]:
+            raise ValueError("Matrix must be nonempty")
+        cols = len(data[0])
+        for r in data:
+            if len(r) != cols:
+                raise ValueError("All rows must have equal length")
+        self.A = [row[:] for row in data]
+        self.m = len(data)
+        self.n = cols
+
+    @staticmethod
+    def zeros(m: int, n: int) -> "IntMatrix":
+        return IntMatrix([[0]*n for _ in range(m)])
+
+    @staticmethod
+    def eye(n: int) -> "IntMatrix":
+        A = [[0]*n for _ in range(n)]
+        for i in range(n): A[i][i] = 1
+        return IntMatrix(A)
+
+    def copy(self) -> "IntMatrix":
+        return IntMatrix(self.A)
+
+    def __getitem__(self, ij: Tuple[int,int]) -> int:
+        i,j = ij
+        return self.A[i][j]
+
+    def __setitem__(self, ij: Tuple[int,int], v: int):
+        i,j = ij
+        self.A[i][j] = v
+
+    def shape(self) -> Tuple[int,int]:
+        return self.m, self.n
+
+    def mul(self, other: "IntMatrix") -> "IntMatrix":
+        if self.n != other.m: raise ValueError("dimension mismatch")
+        C = [[0]*other.n for _ in range(self.m)]
+        for i in range(self.m):
+            for k in range(self.n):
+                aik = self.A[i][k]
+                if aik == 0: continue
+                for j in range(other.n):
+                    C[i][j] += aik * other.A[k][j]
+        return IntMatrix(C)
+
+    def trim(self) -> str:
+        # pretty string (compact)
+        return "\n".join("[" + " ".join(f"{v}" for v in row) + "]" for row in self.A)
+
+# ========================== Bareiss Determinant (Z) ==========================
+def det_bareiss(M: IntMatrix) -> int:
+    # Fraction-free Bareiss algorithm (exact divisions over Z)
+    m, n = M.shape()
+    if m != n: raise ValueError("square matrix required")
+    A = M.copy().A
+    prev = 1
+    sign = 1
+    for k in range(n-1):
+        # find pivot
+        piv = k
+        while piv < n and A[piv][k] == 0:
+            piv += 1
+        if piv == n: 
+            return 0
+        if piv != k:
+            A[k], A[piv] = A[piv], A[k]
+            sign = -sign
+        pivot = A[k][k]
+        for i in range(k+1, n):
+            for j in range(k+1, n):
+                # A[i,j] = (A[i,j]*pivot - A[i,k]*A[k,j]) / prev
+                num = A[i][j]*pivot - A[i][k]*A[k][j]
+                if k == 0:
+                    A[i][j] = num
                 else:
-                    row.append(self.ring.zero())
-            matrix_data.append(row)
-        
-        self._symmetric_matrix = Matrix(matrix_data)
-        return self._symmetric_matrix
-    
-    def to_bilinear_matrix(self) -> Matrix:
-        """Convert to bilinear form matrix (cached)."""
-        if self._bilinear_matrix is not None:
-            return self._bilinear_matrix
-        
-        matrix_data = []
-        char = getattr(self.ring, 'characteristic', lambda: 0)()
-        
-        for i in range(self.n_vars):
-            row = []
-            for j in range(self.n_vars):
-                if i == j and (i, j) in self.coeffs:
-                    # Diagonal elements
-                    row.append(self.coeffs[(i, j)])
-                elif i != j:
-                    # Off-diagonal elements
-                    coeff = None
-                    if (i, j) in self.coeffs:
-                        coeff = self.coeffs[(i, j)]
-                    elif (j, i) in self.coeffs:
-                        coeff = self.coeffs[(j, i)]
-                    
-                    if coeff is not None:
-                        if char == 2:
-                            # In characteristic 2, no division by 2 needed
-                            row.append(coeff)
-                        else:
-                            # Try to divide by 2
-                            try:
-                                two_inv = self.ring.inverse(2)
-                                if two_inv is not None:
-                                    row.append(self.ring.multiply(coeff, two_inv))
-                                else:
-                                    row.append(coeff)
-                            except:
-                                row.append(coeff)
+                    q, r = divmod(num, prev)
+                    if r != 0:
+                        # Fallback: keep numerator; determinant will still be correct from diagonal
+                        A[i][j] = num
                     else:
-                        row.append(self.ring.zero())
+                        A[i][j] = q
+            A[i][k] = 0
+        prev = pivot
+    return sign * A[n-1][n-1]
+
+# ========================== Fraction-free Row Echelon and RREF ==========================
+def row_echelon_fraction_free(M: IntMatrix) -> Tuple[IntMatrix, List[int], List[int]]:
+    # Eliminate strictly below pivot columns; no normalization; returns U, pivot_cols, pivots
+    A = M.copy().A
+    m, n = M.shape()
+    row = 0
+    pivot_cols: List[int] = []
+    pivots: List[int] = []
+    for col in range(n):
+        if row == m: break
+        # find pivot
+        pr = row
+        while pr < m and A[pr][col] == 0: pr += 1
+        if pr == m: continue
+        if pr != row:
+            A[row], A[pr] = A[pr], A[row]
+        pivot = A[row][col]
+        # eliminate below (fraction-free)
+        for i in range(row+1, m):
+            if A[i][col] == 0: continue
+            f = A[i][col]
+            for j in range(col, n):
+                A[i][j] = A[i][j]*pivot - f*A[row][j]
+            A[i][col] = 0
+        pivot_cols.append(col)
+        pivots.append(pivot)
+        row += 1
+    return IntMatrix(A), pivot_cols, pivots
+
+def rref_fraction_free(M: IntMatrix) -> Tuple[IntMatrix, int]:
+    # Compute RREF without introducing rationals: eliminate above and below; no pivot normalization
+    U, pivot_cols, pivots = row_echelon_fraction_free(M)
+    A = U.A
+    m, n = U.shape()
+    r = len(pivot_cols)
+    # eliminate above pivots
+    for idx in range(r-1, -1, -1):
+        row = idx
+        col = pivot_cols[idx]
+        pivot = A[row][col]
+        if pivot == 0: continue
+        for i in range(0, row):
+            if A[i][col] == 0: continue
+            f = A[i][col]
+            for j in range(col, n):
+                A[i][j] = A[i][j]*pivot - f*A[row][j]
+            A[i][col] = 0
+    return IntMatrix(A), r
+
+# ========================== Integer Eigenvalues and Eigenvectors ==========================
+def divisors(n: int) -> List[int]:
+    n = abs(n)
+    if n == 0:
+        # convention: search a small set if det=0 (0 is always an eigenvalue when singular)
+        return [0, 1, -1, 2, -2, 3, -3]
+    ds = set()
+    i = 1
+    while i*i <= n:
+        if n % i == 0:
+            ds.add(i); ds.add(-i)
+            ds.add(n//i); ds.add(-(n//i))
+        i += 1
+    return sorted(ds)
+
+def mat_sub_lambda_I(M: IntMatrix, lam: int) -> IntMatrix:
+    m, n = M.shape()
+    if m != n: raise ValueError("square matrix required")
+    A = M.copy().A
+    for i in range(n):
+        A[i][i] -= lam
+    return IntMatrix(A)
+
+def integer_eigenvalues(M: IntMatrix) -> List[int]:
+    # test all integer divisors of det(M) (rational root candidates for det(λI - A) = 0)
+    detA = det_bareiss(M)
+    cands = divisors(detA)
+    eigs = []
+    for lam in cands:
+        N = mat_sub_lambda_I(M, lam)
+        if det_bareiss(N) == 0:
+            if lam not in eigs:
+                eigs.append(lam)
+    return eigs
+
+def integer_nullspace_basis_from_upper(U: IntMatrix, pivot_cols: List[int], pivots: List[int]) -> List[List[int]]:
+    # Build integer basis vectors v for U v = 0 by choosing each free variable,
+    # setting it to P = product of pivots, and exact back-substitution scaling.
+    m, n = U.shape()
+    r = len(pivot_cols)
+    pivot_set = set(pivot_cols)
+    P = 1
+    for p in pivots: P *= p if p != 0 else 1
+    basis: List[List[int]] = []
+    free_cols = [j for j in range(n) if j not in pivot_set]
+    for f in free_cols:
+        v = [0]*n
+        v[f] = P
+        # back substitution from bottom pivot row to top
+        for idx in range(r-1, -1, -1):
+            row = idx
+            c = pivot_cols[idx]
+            p = U.A[row][c]
+            # s = sum_{j>c} U[row][j] * v[j]
+            s = 0
+            for j in range(c+1, n):
+                if U.A[row][j] != 0 and v[j] != 0:
+                    s += U.A[row][j]*v[j]
+            # set v[c] = -s / p (exact in our construction)
+            if p == 0:
+                v[c] = 0
+            else:
+                q, rmd = divmod(-s, p)
+                if rmd != 0:
+                    # As a safety, scale whole vector by p to make division exact
+                    for t in range(n): v[t] *= p
+                    q2, r2 = divmod(-s*p, p)
+                    if r2 != 0: raise RuntimeError("unexpected non-exact division")
+                    v[c] = q2
                 else:
-                    row.append(self.ring.zero())
-            matrix_data.append(row)
-        
-        self._bilinear_matrix = Matrix(matrix_data)
-        return self._bilinear_matrix
-    
-    def to_numpy_matrix(self) -> np.ndarray:
-        """Convert to numpy array for fast computation."""
-        if self._numpy_matrix is not None:
-            return self._numpy_matrix
-        
-        matrix = np.zeros((self.n_vars, self.n_vars), dtype=int)
-        
-        # Get modulus if available
-        modulus = getattr(self.ring, 'modulus', None)
-        
-        for (i, j), coeff in self.coeffs.items():
-            coeff_int = int(coeff) if hasattr(coeff, '__int__') else coeff
-            if modulus:
-                coeff_int = coeff_int % modulus
-            
-            if i == j:
-                matrix[i, j] = coeff_int
-            else:
-                # Handle bilinear form conversion
-                if modulus == 2:
-                    matrix[i, j] = coeff_int
-                    matrix[j, i] = coeff_int
-                else:
-                    # Try to divide by 2
-                    if modulus and modulus % 2 == 1:
-                        inv_2 = self._fast_mod_inverse(2, modulus)
-                        if inv_2:
-                            half_coeff = (coeff_int * inv_2) % modulus
-                            matrix[i, j] = half_coeff
-                            matrix[j, i] = half_coeff
-                        else:
-                            matrix[i, j] = coeff_int
-                            matrix[j, i] = coeff_int
-                    else:
-                        matrix[i, j] = coeff_int
-                        matrix[j, i] = coeff_int
-        
-        if modulus:
-            matrix = matrix % modulus
-        
-        self._numpy_matrix = matrix
-        return self._numpy_matrix
-    
-    @lru_cache(maxsize=128)
-    def _fast_mod_inverse(self, a: int, m: int) -> Optional[int]:
-        """Fast modular inverse computation."""
-        def gcd_extended(a, b):
-            if a == 0:
-                return b, 0, 1
-            gcd_val, x1, y1 = gcd_extended(b % a, a)
-            x = y1 - (b // a) * x1
-            y = x1
-            return gcd_val, x, y
-        
-        gcd_val, x, _ = gcd_extended(a % m, m)
-        if gcd_val != 1:
-            return None
-        return (x % m + m) % m
+                    v[c] = q
+        # remove common gcd to keep vector primitive
+        g = 0
+        for x in v: 
+            g = Z.gcd(g, x)
+        if g > 1:
+            v = [x//g for x in v]
+        basis.append(v)
+    return basis
 
-class HybridLinearAlgebra:
-    """Hybrid linear algebra using both SymPy and optimized numpy computation."""
-    
-    def __init__(self, ring: EnhancedRing):
-        self.ring = ring
-        self.modulus = getattr(ring, 'modulus', None)
-        self.is_finite = self.modulus is not None or hasattr(ring, 'order')
-        self.use_fast_path = self.modulus and self.modulus < 100
-    
-    def eigenvals_eigenvects(self, quad_form: UnifiedQuadraticForm) -> List[Tuple[Any, int, List[Matrix]]]:
-        """Compute eigenvalues and eigenvectors using optimal method."""
-        
-        # Choose computation method based on ring properties
-        if self.use_fast_path:
-            return self._fast_eigenvals(quad_form)
-        elif self.is_finite:
-            return self._sympy_finite_eigenvals(quad_form.to_bilinear_matrix())
-        else:
-            return self._sympy_general_eigenvals(quad_form.to_bilinear_matrix())
-    
-    def _fast_eigenvals(self, quad_form: UnifiedQuadraticForm) -> List[Tuple[Any, int, List[Matrix]]]:
-        """Fast eigenvalue computation using numpy."""
-        matrix = quad_form.to_numpy_matrix()
-        n = matrix.shape[0]
-        eigenvals = []
-        
-        for val in range(self.modulus):
-            char_matrix = (matrix - val * np.eye(n, dtype=int)) % self.modulus
-            
-            # Fast singularity check
-            if self._is_singular_fast(char_matrix):
-                # Find eigenvectors
-                eigenvects = self._null_space_fast(char_matrix)
-                if eigenvects:
-                    sympy_vects = [Matrix(v) for v in eigenvects]
-                    eigenval = self.ring.element(val) if hasattr(self.ring, 'element') else val
-                    eigenvals.append((eigenval, len(sympy_vects), sympy_vects))
-        
-        return eigenvals
-    
-    def _is_singular_fast(self, matrix: np.ndarray) -> bool:
-        """Fast singularity check using rank computation."""
-        return self._matrix_rank_fast(matrix) < matrix.shape[0]
-    
-    def _matrix_rank_fast(self, matrix: np.ndarray) -> int:
-        """Fast matrix rank computation over Z/mZ."""
-        A = matrix.copy()
-        m, n = A.shape
-        rank = 0
-        
-        for col in range(min(m, n)):
-            # Find pivot
-            pivot_row = None
-            for row in range(rank, m):
-                if A[row, col] % self.modulus != 0:
-                    if self._gcd(A[row, col], self.modulus) == 1:
-                        pivot_row = row
-                        break
-            
-            if pivot_row is None:
-                continue
-            
-            # Swap rows
-            if pivot_row != rank:
-                A[[rank, pivot_row]] = A[[pivot_row, rank]]
-            
-            # Get inverse
-            pivot_inv = self._fast_mod_inverse(A[rank, col], self.modulus)
-            if pivot_inv is None:
-                continue
-            
-            # Eliminate
-            for row in range(m):
-                if row != rank and A[row, col] % self.modulus != 0:
-                    mult = (A[row, col] * pivot_inv) % self.modulus
-                    A[row] = (A[row] - mult * A[rank]) % self.modulus
-            
-            rank += 1
-        
-        return rank
-    
-    def _null_space_fast(self, matrix: np.ndarray) -> List[List[int]]:
-        """Fast null space computation."""
-        A = matrix.copy()
-        m, n = A.shape
-        
-        # Gaussian elimination
-        pivot_cols = []
-        rank = 0
-        
-        for col in range(n):
-            pivot_row = None
-            for row in range(rank, m):
-                if A[row, col] % self.modulus != 0 and self._gcd(A[row, col], self.modulus) == 1:
-                    pivot_row = row
-                    break
-            
-            if pivot_row is None:
-                continue
-            
-            if pivot_row != rank:
-                A[[rank, pivot_row]] = A[[pivot_row, rank]]
-            
-            pivot_cols.append(col)
-            pivot_inv = self._fast_mod_inverse(A[rank, col], self.modulus)
-            
-            if pivot_inv is not None:
-                A[rank] = (A[rank] * pivot_inv) % self.modulus
-                
-                for row in range(m):
-                    if row != rank and A[row, col] % self.modulus != 0:
-                        mult = A[row, col]
-                        A[row] = (A[row] - mult * A[rank]) % self.modulus
-            
-            rank += 1
-        
-        # Find free variables
-        free_vars = [i for i in range(n) if i not in pivot_cols]
-        if not free_vars:
-            return []
-        
-        # Generate basis vectors
-        null_vectors = []
-        for free_var in free_vars:
-            vec = [0] * n
-            vec[free_var] = 1
-            
-            # Back substitution
-            for i in range(rank-1, -1, -1):
-                if i < len(pivot_cols):
-                    col = pivot_cols[i]
-                    val = 0
-                    for j in range(col+1, n):
-                        val = (val - A[i, j] * vec[j]) % self.modulus
-                    vec[col] = val % self.modulus
-            
-            null_vectors.append(vec)
-        
-        return null_vectors
-    
-    def _sympy_finite_eigenvals(self, matrix: Matrix) -> List[Tuple[Any, int, List[Matrix]]]:
-        """SymPy eigenvalue computation for finite rings."""
-        n = matrix.rows
-        eigenvals = []
-        
-        # Determine test range
-        if hasattr(self.ring, 'modulus'):
-            test_range = range(self.ring.modulus)
-        elif hasattr(self.ring, 'order'):
-            test_range = range(min(self.ring.order, 50))
-        else:
-            test_range = range(20)
-        
-        for val in test_range:
-            try:
-                eigenval = self.ring.element(val) if hasattr(self.ring, 'element') else val
-                char_matrix = matrix - eigenval * sp.eye(n)
-                
-                # Check if singular
-                try:
-                    det = char_matrix.det()
-                    is_zero = (det == self.ring.zero() if hasattr(self.ring, 'zero') else det == 0)
-                    
-                    if is_zero:
-                        eigenvects = char_matrix.nullspace()
-                        if eigenvects:
-                            eigenvals.append((eigenval, len(eigenvects), eigenvects))
-                            
-                except Exception:
-                    continue
-                    
-            except Exception:
-                continue
-        
-        return eigenvals
-    
-    def _sympy_general_eigenvals(self, matrix: Matrix) -> List[Tuple[Any, int, List[Matrix]]]:
-        """General SymPy eigenvalue computation."""
-        try:
-            return matrix.eigenvects()
-        except Exception:
-            return []
-    
-    @lru_cache(maxsize=1024)
-    def _gcd(self, a: int, b: int) -> int:
-        """Cached GCD computation."""
-        while b:
-            a, b = b, a % b
-        return abs(a)
-    
-    @lru_cache(maxsize=512)
-    def _fast_mod_inverse(self, a: int, m: int) -> Optional[int]:
-        """Fast cached modular inverse."""
-        a = a % m
-        if self._gcd(a, m) != 1:
-            return None
-        
-        def extended_gcd(a, b):
-            if a == 0:
-                return b, 0, 1
-            gcd_val, x1, y1 = extended_gcd(b % a, a)
-            x = y1 - (b // a) * x1
-            y = x1
-            return gcd_val, x, y
-        
-        _, x, _ = extended_gcd(a, m)
-        return (x % m + m) % m
-    
-    def diagonalize_symmetric(self, quad_form: UnifiedQuadraticForm) -> Tuple[Optional[Matrix], Optional[Matrix], bool]:
-        """Diagonalize symmetric matrix using congruence transformation."""
-        if self.use_fast_path:
-            return self._fast_diagonalize_symmetric(quad_form)
-        else:
-            return self._sympy_diagonalize_symmetric(quad_form.to_bilinear_matrix())
-    
-    def _fast_diagonalize_symmetric(self, quad_form: UnifiedQuadraticForm) -> Tuple[Optional[Matrix], Optional[Matrix], bool]:
-        """Fast symmetric diagonalization using numpy."""
-        matrix = quad_form.to_numpy_matrix()
-        n = matrix.shape[0]
-        A = matrix.copy()
-        P = np.eye(n, dtype=int)
-        
-        for i in range(n):
-            # Find pivot
-            pivot_found = False
-            
-            if A[i, i] != 0 and self._gcd(A[i, i], self.modulus) == 1:
-                pivot_found = True
-            else:
-                # Try to create a pivot
-                for j in range(i, n):
-                    for k in range(j, n):
-                        if A[j, k] != 0 and self._gcd(A[j, k], self.modulus) == 1:
-                            if j != i:
-                                A[[i, j]] = A[[j, i]]
-                                A[:, [i, j]] = A[:, [j, i]]
-                                P[[i, j]] = P[[j, i]]
-                            
-                            if k != i and k != j:
-                                for row in range(n):
-                                    A[row, i] = (A[row, i] + A[row, k]) % self.modulus
-                                for col in range(n):
-                                    A[i, col] = (A[i, col] + A[k, col]) % self.modulus
-                                for row in range(n):
-                                    P[row, i] = (P[row, i] + P[row, k]) % self.modulus
-                            
-                            pivot_found = True
-                            break
-                    if pivot_found:
-                        break
-            
-            if not pivot_found:
-                return None, None, False
-            
-            # Eliminate
-            pivot = A[i, i]
-            pivot_inv = self._fast_mod_inverse(pivot, self.modulus)
-            
-            if pivot_inv is None:
-                return None, None, False
-            
-            for j in range(i+1, n):
-                if A[i, j] != 0:
-                    multiplier = (A[i, j] * pivot_inv) % self.modulus
-                    
-                    for k in range(n):
-                        A[k, j] = (A[k, j] - multiplier * A[k, i]) % self.modulus
-                        A[j, k] = (A[j, k] - multiplier * A[i, k]) % self.modulus
-                        P[k, j] = (P[k, j] - multiplier * P[k, i]) % self.modulus
-        
-        return Matrix(P), Matrix(A), True
-    
-    def _sympy_diagonalize_symmetric(self, matrix: Matrix) -> Tuple[Optional[Matrix], Optional[Matrix], bool]:
-        """SymPy symmetric diagonalization."""
-        try:
-            # For small matrices, try direct diagonalization
-            if matrix.rows <= 3:
-                P, D = matrix.diagonalize()
-                return P, D, True
-            else:
-                # For larger matrices, this is more complex in general rings
-                return None, None, False
-        except Exception:
-            return None, None, False
+def integer_eigenvectors(M: IntMatrix, lam: int) -> List[List[int]]:
+    N = mat_sub_lambda_I(M, lam)
+    U, pivot_cols, pivots = row_echelon_fraction_free(N)
+    return integer_nullspace_basis_from_upper(U, pivot_cols, pivots)
 
-def comprehensive_example():
-    """Comprehensive example showcasing all features."""
-    print("=" * 60)
-    print("COMPREHENSIVE QUADRATIC FORM ANALYSIS")
-    print("=" * 60)
-    
-    examples = [
-        (ZnRing(5), "Z/5Z", {(0, 0): 2, (0, 1): 3, (1, 1): 1}),
-        (ZnRing(7), "Z/7Z", {(0, 0): 1, (0, 1): 2, (1, 1): 3}),
-        (FiniteField(3), "GF(3)", {(0, 0): 1, (0, 1): 2, (1, 1): 2}),
-    ]
-    
-    for ring, name, coeffs in examples:
-        print(f"\n{name} Example:")
-        print("-" * 40)
-        
-        start_time = time.time()
-        
-        # Create quadratic form
-        quad_form = UnifiedQuadraticForm(coeffs, ring)
-        algebra = HybridLinearAlgebra(ring)
-        
-        # Display matrices
-        print("Bilinear matrix:")
-        sp.pprint(quad_form.to_bilinear_matrix())
-        
-        # Compute eigenvalues
-        eigenvals = algebra.eigenvals_eigenvects(quad_form)
-        
-        print(f"\nEigenvalues and eigenvectors:")
-        for eigenval, mult, eigenvects in eigenvals:
-            print(f"λ = {eigenval} (multiplicity: {mult})")
-            for i, vec in enumerate(eigenvects):
-                print(f"  v_{i+1} = {vec.T}")
-        
-        # Try diagonalization
-        P, D, success = algebra.diagonalize_symmetric(quad_form)
-        
-        if success:
-            print(f"\nSymmetric diagonalization successful:")
-            print("P =")
-            sp.pprint(P)
-            print("D =")
-            sp.pprint(D)
-        else:
-            print("\nSymmetric diagonalization failed")
-        
-        elapsed = time.time() - start_time
-        print(f"\nComputation time: {elapsed:.4f}s")
-    
-    print("\n" + "=" * 60)
+# ========================== Quadratic Integer Polynomials → Bilinear ==========================
+# Representation of a quadratic polynomial in n variables:
+#   Q(x) = sum_i a[(i,i)] * x_i^2 + sum_{i<j} a[(i,j)] * x_i * x_j   with a[(i,j)] integers
+# The associated symmetric bilinear form B satisfies:
+#   Q(x) = B(x,x), and for i<j, coefficient of x_i x_j equals 2*B_ij  ("twos out" convention).
+# To stay in integers, we build M2 = 2B with:
+#   M2_ii = 2*a[(i,i)] and M2_ij = a[(i,j)] for i≠j.
+# Then Q(x) = (1/2) x^T M2 x with x^T M2 x always even for integer x.
 
-if __name__ == "__main__":
-    comprehensive_example()
+def quadratic_coeffs_to_gram2(a: Dict[Tuple[int,int], int]) -> IntMatrix:
+    # Determine dimension
+    n = 0
+    for (i,j) in a.keys():
+        n = max(n, i+1, j+1)
+    M2 = [[0]*n for _ in range(n)]
+    for i in range(n):
+        if (i,i) in a:
+            M2[i][i] = 2*a[(i,i)]
+    for (i,j), c in a.items():
+        if i == j: continue
+        ii, jj = (i,j) if i < j else (j,i)
+        M2[ii][jj] += c
+        M2[jj][ii] += c
+    return IntMatrix(M2)
+
+def eval_quadratic_from_gram2(M2: IntMatrix, x: List[int]) -> int:
+    # Computes Q(x) = (1/2) x^T M2 x  with exact integer division by 2
+    n = len(x)
+    if M2.m != n or M2.n != n: raise ValueError("dimension mismatch")
+    s = 0
+    for i in range(n):
+        xi = x[i]
+        if xi == 0: continue
+        for j in range(n):
+            s += xi * M2.A[i][j] * x[j]
+    q, r = divmod(s, 2)
+    if r != 0:
+        raise ValueError("x^T (2B) x is not even; coefficients may not be quadratic-integer")
+    return q
