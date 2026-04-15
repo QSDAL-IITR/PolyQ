@@ -1,14 +1,10 @@
 numpy>=2
 qiskit>=2.0.0
 
-# PolyQ on itself only requires numpy for evaluation and qiskit for its QuantumCircuit object.
+# PolyQ on itself only requires numpy for evaluation and qiskit for it's QuantumCicuit object.
 # For benchmarking and testing purposes, one will need the following libraries as intended.
 
 qiskit_aer>=0.17.0
 mqt>=0.1.1
 mqt.ddsim>=1.24
 psutil>=7.0.0
-
-# Sphinx documentation dependencies
-sphinx>=4.0.0
-sphinx-rtd-theme>=1.0.0
